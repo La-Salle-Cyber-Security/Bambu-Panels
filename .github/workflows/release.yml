@@ -195,14 +195,25 @@ jobs:
         shell: pwsh
         run: |
           $version = "${env:GITHUB_REF_NAME}"
+
           Remove-Item -Recurse -Force bundle, dist -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path bundle\bin, dist | Out-Null
 
           # Copy repo into bundle, excluding junk
           robocopy . bundle /E /XD .git node_modules dist pkgroot bundle /XF .DS_Store | Out-Null
+          $rc = $LASTEXITCODE
+
+          # Robocopy exit codes 0-7 are success. 8+ is failure.
+          if ($rc -ge 8) {
+            Write-Error "robocopy failed with exit code $rc"
+            exit $rc
+          } else {
+            Write-Host "robocopy succeeded with exit code $rc (treated as success)"
+          }
+
           Copy-Item bin\go2rtc.exe bundle\bin\go2rtc.exe -Force
 
-          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-amd64.zip" -Force
+          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-amd64.zip" -Forcee
 
       - name: Upload Windows bundle
         uses: softprops/action-gh-release@v2
