@@ -11,8 +11,8 @@ permissions:
 
 env:
   GO2RTC_REPO: AlexxIT/go2rtc
-  # Use "latest" or pin a specific tag like "v1.9.8" (recommended once stable)
   GO2RTC_TAG: latest
+  GH_TOKEN: ${{ github.token }}
 
 jobs:
   create-release-and-sources:
