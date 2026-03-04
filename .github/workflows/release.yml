@@ -213,7 +213,7 @@ jobs:
 
           Copy-Item bin\go2rtc.exe bundle\bin\go2rtc.exe -Force
 
-          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-amd64.zip" -Forcee
+          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-amd64.zip" -Force
 
       - name: Upload Windows bundle
         uses: softprops/action-gh-release@v2
