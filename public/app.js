@@ -11,14 +11,21 @@ function setConn(connected) {
 }
 
 async function sendState(state) {
-    elErr.textContent = "";
     if (state === "stop") {
         const ok = confirm("Stop the print? (This is the big red button.)");
         if (!ok) return;
     }
+    elErr.textContent = "⏳ Sending command...";
     const r = await fetch(`/api/state/${state}`, { method: "POST" });
     const j = await r.json().catch(() => ({}));
     if (!j.ok) elErr.textContent = j.error || "Command failed";
+}
+
+async function setLight(node, mode) {
+    elErr.textContent = "⏳ Sending command...";
+    const r = await fetch(`/api/light/${node}/${mode}`, { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) elErr.textContent = j.error || `Light failed (${r.status})`;
 }
 
 document.getElementById("pause").onclick = () => sendState("pause");
@@ -39,6 +46,18 @@ ws.onmessage = (ev) => {
 
     if (msg.type === "error") {
         elErr.textContent = msg.data;
+    }
+
+    if (msg.type === "system") {
+        const s = msg.data;
+        if (!s) return;
+
+        // Show a short status line in the same error/status area
+        if (s.result === "success") {
+            elErr.textContent = `✅ ${s.command} ok`;
+        } else {
+            elErr.textContent = `❌ ${s.command} failed: ${s.reason || "unknown"}`;
+        }
     }
 
     if (msg.type === "telemetry") {
@@ -67,6 +86,18 @@ ws.onmessage = (ev) => {
 
         if (t.lastMessageAt) elLast.textContent = `Last update: ${t.lastMessageAt}`;
 
+        // Lights
+        const lights = Array.isArray(t.lights) ? t.lights : [];
+        const chamber = lights.find(x => x.node === "chamber_light")?.mode ?? "—";
+        const work = lights.find(x => x.node === "work_light")?.mode ?? "—";
+
+        document.getElementById("lightChamberState").textContent = chamber;
+        document.getElementById("lightWorkState").textContent = work;
+
+        // Optional: disable work light buttons since it's not controllable
+        const workBtns = document.querySelectorAll("[data-light='work']");
+        workBtns.forEach(b => b.disabled = true);
+
         // Keep debug JSON small/useful
         elJob.textContent = JSON.stringify(
             {
@@ -91,6 +122,9 @@ ws.onmessage = (ev) => {
         );
     }
 };
+
+ws.onopen = () => setConn(false);
+ws.onclose = () => setConn(false);
 
 ws.onopen = () => setConn(false);
 ws.onclose = () => setConn(false);
