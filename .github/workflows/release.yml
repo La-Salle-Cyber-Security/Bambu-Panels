@@ -174,12 +174,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch go2rtc for Windows ${{ matrix.arch }}
+      - name: Fetch go2rtc for Windows amd64 (win64.zip)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path bin | Out-Null
-          $rx = "go2rtc.*windows.*(amd64|x86_64)|go2rtc.*(amd64|x86_64).*windows"
-          python scripts/fetch_go2rtc.py $env:GO2RTC_REPO $env:GO2RTC_TAG $rx "bin/go2rtc.exe"
+
+          # go2rtc uses win64.zip naming
+          $rx = "go2rtc_win64\.zip"
+          python scripts/fetch_go2rtc.py $env:GO2RTC_REPO $env:GO2RTC_TAG $rx "bin\go2rtc_win64.zip"
+
+          # Extract zip and locate the exe
+          Expand-Archive -Path "bin\go2rtc_win64.zip" -DestinationPath "bin\go2rtc_extracted" -Force
+
+          $exe = Get-ChildItem -Path "bin\go2rtc_extracted" -Recurse -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Could not find .exe inside go2rtc_win64.zip" }
+
+          Copy-Item $exe.FullName "bin\go2rtc.exe" -Force
 
       - name: Package Windows bundle
         shell: pwsh
@@ -192,9 +202,9 @@ jobs:
           robocopy . bundle /E /XD .git node_modules dist pkgroot bundle /XF .DS_Store | Out-Null
           Copy-Item bin\go2rtc.exe bundle\bin\go2rtc.exe -Force
 
-          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-${{ matrix.arch }}.zip" -Force
+          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-amd64.zip" -Force
 
       - name: Upload Windows bundle
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/bambu-panels-*-windows-*.zip
+          files: dist/bambu-panels-*-windows-amd64.zip
