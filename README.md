@@ -160,7 +160,7 @@ Bambu-Panels
 ├── scripts/
 │   └── fetch_go2rtc.py
 │
-├── web/
+├── public/
 │
 ├── start.sh
 │
