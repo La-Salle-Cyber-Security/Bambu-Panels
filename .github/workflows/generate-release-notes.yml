@@ -1,0 +1,107 @@
+name: Generate Release Notes (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to update (example: V1.0.9)"
+        required: true
+        type: string
+      previous_tag:
+        description: "Optional: previous tag (example: V1.0.8). Leave blank to let GitHub guess."
+        required: false
+        type: string
+      mode:
+        description: "Overwrite or append notes into the release body"
+        required: true
+        default: "overwrite"
+        type: choice
+        options:
+          - overwrite
+          - append
+
+permissions:
+  contents: write
+
+jobs:
+  update-release-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate notes and update release body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          TAG: ${{ inputs.tag }}
+          PREV: ${{ inputs.previous_tag }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+
+          api() {
+            curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" \
+                 "$@"
+          }
+
+          echo "Updating release notes for $OWNER/$REPO tag=$TAG mode=$MODE"
+
+          RELEASE_JSON="$(api "https://api.github.com/repos/$OWNER/$REPO/releases/tags/$TAG")"
+          RELEASE_ID="$(echo "$RELEASE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")"
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "None" ]; then
+            echo "ERROR: No release exists for tag '$TAG'. Create the release first." >&2
+            exit 1
+          fi
+
+          if [ -n "${PREV:-}" ]; then
+            GEN_PAYLOAD="$(python3 - <<PY
+import json, os
+print(json.dumps({"tag_name": os.environ["TAG"], "previous_tag_name": os.environ["PREV"]}))
+PY
+)"
+          else
+            GEN_PAYLOAD="$(python3 - <<PY
+import json, os
+print(json.dumps({"tag_name": os.environ["TAG"]}))
+PY
+)"
+          fi
+
+          NOTES_JSON="$(curl -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$OWNER/$REPO/releases/generate-notes" \
+            -d "$GEN_PAYLOAD")"
+
+          NOTES_BODY="$(echo "$NOTES_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body',''))")"
+          if [ -z "$NOTES_BODY" ] || [ "$NOTES_BODY" = "None" ]; then
+            echo "ERROR: GitHub did not return generated notes. Response:" >&2
+            echo "$NOTES_JSON" >&2
+            exit 1
+          fi
+
+          CURRENT_BODY="$(echo "$RELEASE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body','') or '')")"
+
+          if [ "$MODE" = "append" ] && [ -n "$CURRENT_BODY" ]; then
+            NEW_BODY="$CURRENT_BODY"$'\n\n---\n\n'"$NOTES_BODY"
+          else
+            NEW_BODY="$NOTES_BODY"
+          fi
+
+          PATCH_PAYLOAD="$(python3 - <<PY
+import json, os, sys
+print(json.dumps({"body": os.environ["BODY"]}))
+PY
+)"
+          # Put body into env so JSON quoting is correct
+          BODY="$NEW_BODY" curl -sS -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$OWNER/$REPO/releases/$RELEASE_ID" \
+            -d "$(python3 - <<PY
+import json, os
+print(json.dumps({"body": os.environ["BODY"]}))
+PY
+)" >/dev/null
+
+          echo "Done. Release body updated for tag=$TAG"
