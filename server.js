@@ -1,0 +1,345 @@
+// server.js
+// Panel A backend: Express + WebSocket + direct MQTT (Bambu LAN mode)
+// .env needed:
+//   PRINTER_IP=192.168.220.195
+//   PRINTER_SN=00M00A340400021
+//   LAN_ACCESS_CODE=xxxxxxxx
+//   PORT=8787 (optional)
+
+import express from "express";
+import path from "path";
+import fs from "fs";
+import http from "http";
+import { WebSocketServer } from "ws";
+import { fileURLToPath } from "url";
+import mqtt from "mqtt";
+
+// --------------------
+// Minimal .env loader (no deps)
+// --------------------
+function loadDotEnv() {
+    const envPath = path.join(process.cwd(), ".env");
+    if (!fs.existsSync(envPath)) return;
+
+    for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq < 0) continue;
+
+        const key = trimmed.slice(0, eq).trim();
+        const val = trimmed.slice(eq + 1).trim();
+        if (!process.env[key]) process.env[key] = val;
+    }
+}
+loadDotEnv();
+
+// --------------------
+// Config
+// --------------------
+const PRINTER_IP = process.env.PRINTER_IP;
+const PRINTER_SN = process.env.PRINTER_SN;
+const LAN_ACCESS_CODE = process.env.LAN_ACCESS_CODE;
+const PORT = Number(process.env.PORT || 8787);
+const CAMERA_URL = process.env.CAMERA_URL; // optional
+
+if (!PRINTER_IP || !PRINTER_SN || !LAN_ACCESS_CODE) {
+    console.error(
+        "Missing .env values. You need:\n" +
+        "  PRINTER_IP=...\n" +
+        "  PRINTER_SN=...   (EXACT from device/<SN>/report)\n" +
+        "  LAN_ACCESS_CODE=...\n"
+    );
+    process.exit(1);
+}
+
+const REPORT_TOPIC = `device/${PRINTER_SN}/report`;
+const REQUEST_TOPIC = `device/${PRINTER_SN}/request`;
+
+// --------------------
+// Web server
+// --------------------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+function safeJson(x) {
+    try {
+        return JSON.stringify(x);
+    } catch {
+        return JSON.stringify({ error: "Unable to serialize object" });
+    }
+}
+
+function broadcast(obj) {
+    const msg = safeJson(obj);
+    for (const ws of wss.clients) {
+        if (ws.readyState === ws.OPEN) ws.send(msg);
+    }
+}
+
+const latest = {
+    mqttConnected: false,
+    lastMessageAt: null,
+    lastError: null,
+
+    // Raw-ish printer telemetry (from "print" object)
+    print: null,
+
+    // Convenience fields
+    gcode_state: "UNKNOWN",
+    percent: null,
+    nozzleTemp: null,
+    nozzleTarget: null,
+    bedTemp: null,
+    bedTarget: null,
+    chamberTemp: null,
+    remainingTimeMin: null,
+    layer: null,
+    totalLayers: null,
+    file: null,
+};
+
+
+function stamp() {
+    latest.lastMessageAt = new Date().toISOString();
+}
+
+// --------------------
+// MQTT connection
+// --------------------
+const mqttUrl = `mqtts://${PRINTER_IP}:8883`;
+
+const mqttClient = mqtt.connect(mqttUrl, {
+    username: "bblp",
+    password: LAN_ACCESS_CODE,
+
+    // Bambu commonly uses TLS with certs that aren’t CA-trusted from your Mac’s POV
+    rejectUnauthorized: false,
+
+    // Quality-of-life:
+    connectTimeout: 8000,
+    reconnectPeriod: 2000,
+    keepalive: 20,
+});
+
+mqttClient.on("connect", () => {
+    latest.mqttConnected = true;
+    latest.lastError = null;
+    stamp();
+    console.log("✅ MQTT CONNECTED", mqttUrl);
+    console.log("📡 Subscribing:", REPORT_TOPIC);
+
+    mqttClient.subscribe(REPORT_TOPIC, (err) => {
+        if (err) {
+            latest.lastError = `Subscribe error: ${err.message || err}`;
+            console.log("❌", latest.lastError);
+        } else {
+            console.log("✅ Subscribed OK");
+        }
+        broadcast({ type: "conn", data: latest });
+    });
+});
+
+mqttClient.on("reconnect", () => {
+    console.log("↻ MQTT reconnecting...");
+});
+
+mqttClient.on("close", () => {
+    latest.mqttConnected = false;
+    stamp();
+    console.log("⚠️ MQTT CLOSED");
+    broadcast({ type: "conn", data: latest });
+});
+
+mqttClient.on("offline", () => {
+    latest.mqttConnected = false;
+    stamp();
+    console.log("⚠️ MQTT OFFLINE");
+    broadcast({ type: "conn", data: latest });
+});
+
+mqttClient.on("error", (err) => {
+    latest.lastError = String(err?.message || err);
+    stamp();
+    console.log("❌ MQTT ERROR:", latest.lastError);
+    broadcast({ type: "error", data: latest.lastError });
+});
+
+mqttClient.on("message", (topic, payload) => {
+    stamp();
+
+    let msg;
+    try {
+        msg = JSON.parse(payload.toString());
+    } catch {
+        return; // ignore non-JSON
+    }
+
+    // Most Bambu telemetry looks like: { "print": {...} }
+    const print = msg?.print;
+    if (!print) return;
+
+    latest.print = print;
+
+    // Pull commonly useful fields (not all exist all the time)
+    latest.gcode_state = print.gcode_state ?? latest.gcode_state;
+    latest.percent = print.mc_percent ?? latest.percent;
+
+    latest.nozzleTemp = print.nozzle_temper ?? latest.nozzleTemp;
+    latest.nozzleTarget = print.nozzle_target_temper ?? latest.nozzleTarget;
+
+    latest.bedTemp = print.bed_temper ?? latest.bedTemp;
+    latest.bedTarget = print.bed_target_temper ?? latest.bedTarget;
+
+    // X1C often uses chamber_temper; sometimes frame_temper exists on other models
+    latest.chamberTemp = print.chamber_temper ?? print.frame_temper ?? latest.chamberTemp;
+
+    // Derive a few extra helpful fields if present:
+    latest.remainingTimeMin = print.mc_remaining_time ?? latest.remainingTimeMin; // usually minutes
+    latest.layer = print.layer_num ?? latest.layer;
+    latest.totalLayers = print.total_layer_num ?? latest.totalLayers;
+    latest.file = print.subtask_name ?? latest.file;
+
+
+    // If printer rejects a command it may report an error code.
+    if (print.err_code != null && print.err_code !== 0) {
+        const msg = `Printer err_code=${print.err_code} (command rejected)`;
+        latest.lastError = msg;
+        console.log("❌", msg, "full:", print);
+        broadcast({ type: "error", data: msg });
+    }
+
+    broadcast({ type: "telemetry", data: latest });
+});
+
+// --------------------
+// Command helpers
+// --------------------
+let seq = 1;
+
+function publishJson(obj, opts = { qos: 1 }) {
+    return new Promise((resolve, reject) => {
+        const str = JSON.stringify(obj);
+        mqttClient.publish(REQUEST_TOPIC, str, opts, (err) => {
+            if (err) return reject(err);
+            resolve();
+        });
+    });
+}
+
+async function sendState(state) {
+    if (!["pause", "resume", "stop"].includes(state)) {
+        throw new Error("state must be pause|resume|stop");
+    }
+    if (!latest.mqttConnected) {
+        throw new Error("MQTT not connected to printer");
+    }
+
+    const payload = {
+        print: {
+            sequence_id: String(seq++), // must be string in many examples
+            command: state,
+            param: "", // important: always empty for these
+        },
+    };
+
+    console.log("➡️ sending", state, "=>", payload);
+    await publishJson(payload, { qos: 1 });
+}
+
+// --------------------
+// API routes
+// --------------------
+app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, latest, mqttUrl, reportTopic: REPORT_TOPIC, requestTopic: REQUEST_TOPIC });
+});
+
+app.post("/api/state/:state", async (req, res) => {
+    try {
+        await sendState(req.params.state);
+        res.json({ ok: true });
+    } catch (e) {
+        const msg = String(e?.message || e);
+        latest.lastError = msg;
+        stamp();
+        res.status(500).json({ ok: false, error: msg });
+    }
+});
+
+// --------------------
+// Camera proxy
+// --------------------
+app.get("/camera", async (req, res) => {
+  if (!CAMERA_URL) {
+    return res.status(400).send("CAMERA_URL not set in .env");
+  }
+
+  // MJPEG streams are long-lived; don’t let proxies buffer them.
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  const controller = new AbortController();
+  req.on("close", () => controller.abort());
+
+  try {
+    const upstream = await fetch(CAMERA_URL, { signal: controller.signal });
+
+    if (!upstream.ok || !upstream.body) {
+      res.status(upstream.status).send(`Camera upstream error: ${upstream.status}`);
+      return;
+    }
+
+    // Pass through content-type (important for MJPEG)
+    const ct = upstream.headers.get("content-type");
+    if (ct) res.setHeader("Content-Type", ct);
+
+    // Pipe the stream to the browser
+    upstream.body.pipeTo(
+      new WritableStream({
+        write(chunk) {
+          return new Promise((resolve, reject) => {
+            res.write(Buffer.from(chunk), (err) => (err ? reject(err) : resolve()));
+          });
+        },
+        close() {
+          res.end();
+        },
+        abort() {
+          try { res.end(); } catch {}
+        },
+      })
+    ).catch(() => {
+      try { res.end(); } catch {}
+    });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    res.status(500).send(`Camera proxy failed: ${msg}`);
+  }
+});
+
+// --------------------
+// WebSocket: send current state on connect
+// --------------------
+wss.on("connection", (ws) => {
+    ws.send(safeJson({ type: "conn", data: latest }));
+    ws.send(safeJson({ type: "telemetry", data: latest }));
+});
+
+// --------------------
+// Start
+// --------------------
+server.listen(PORT, () => {
+    console.log(`Panel A running on http://localhost:${PORT}`);
+    console.log(`Target printer: ${PRINTER_IP} / ${PRINTER_SN}`);
+    console.log(`MQTTS: ${mqttUrl}`);
+});

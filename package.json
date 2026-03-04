@@ -1,0 +1,19 @@
+{
+  "name": "bambu-panel-a",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bambu-node": "^3.22.21",
+    "express": "^5.2.1",
+    "mqtt": "^5.15.0",
+    "ws": "^8.19.0"
+  },
+  "type": "module"
+}

@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bambu Panel A</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <main class="wrap">
+        <header class="header">
+            <h1>Bambu Panel A</h1>
+            <div id="conn" class="pill">Connecting…</div>
+        </header>
+
+        <section class="grid">
+            <div class="card">
+                <h2>Status</h2>
+                <div id="status" class="big">—</div>
+                <div class="muted" id="file">—</div>
+
+                <div class="bar">
+                    <div id="barFill" class="barFill" style="width: 0%"></div>
+                </div>
+                <div class="row spread muted">
+                    <div id="pct">0%</div>
+                    <div id="eta">ETA: —</div>
+                </div>
+
+                <div class="muted" id="last">—</div>
+            </div>
+
+            <div class="card">
+                <h2>Controls</h2>
+                <div class="row">
+                    <button id="pause">Pause</button>
+                    <button id="resume">Resume</button>
+                    <button id="stop" class="danger">Stop</button>
+                </div>
+                <div class="muted" id="err"></div>
+
+                <h2 style="margin-top:14px;">Temps</h2>
+                <div class="temps">
+                    <div class="tempCard">
+                        <div class="muted">Nozzle</div>
+                        <div id="nozzle" class="tempVal">—</div>
+                    </div>
+                    <div class="tempCard">
+                        <div class="muted">Bed</div>
+                        <div id="bed" class="tempVal">—</div>
+                    </div>
+                    <div class="tempCard">
+                        <div class="muted">Chamber</div>
+                        <div id="chamber" class="tempVal">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card wide">
+                <h2>Camera</h2>
+                <div class="camWrap">
+                    <iframe id="camFrame" src="http://localhost:1984/webrtc.html?src=bambu" class="camFrame"
+                        allow="autoplay; fullscreen"></iframe>
+                </div>
+                <div class="muted">
+                    Camera served by go2rtc (WebRTC). Keep go2rtc running while using Panel A.
+                </div>
+            </div>
+
+            <div class="card wide">
+                <h2>Debug</h2>
+                <pre id="job" class="pre">{}</pre>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
