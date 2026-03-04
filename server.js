@@ -42,6 +42,7 @@ const PRINTER_SN = process.env.PRINTER_SN;
 const LAN_ACCESS_CODE = process.env.LAN_ACCESS_CODE;
 const PORT = Number(process.env.PORT || 8787);
 const CAMERA_URL = process.env.CAMERA_URL; // optional
+const DEBUG = process.env.DEBUG === "true";
 
 if (!PRINTER_IP || !PRINTER_SN || !LAN_ACCESS_CODE) {
     console.error(
@@ -183,11 +184,7 @@ mqttClient.on("message", (topic, payload) => {
     }
 
     // --- System responses (ACK/NAK for commands like ledctrl) ---
-    const sys = msg?.system;
-    if (sys) {
-        console.log("🧠 SYSTEM REPORT:", JSON.stringify(sys, null, 2));
-        broadcast({ type: "system", data: sys });
-    }
+    if (DEBUG) console.log("🧠 SYSTEM REPORT:", JSON.stringify(sys, null, 2));
 
     // Most Bambu telemetry looks like: { "print": {...} }
     const print = msg?.print;
@@ -263,6 +260,137 @@ async function sendState(state) {
 
     console.log("➡️ sending", state, "=>", payload);
     await publishJson(payload, { qos: 1 });
+}
+
+// --------------------
+// Morse code (chamber_light)
+// --------------------
+const MORSE = {
+    A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".",
+    F: "..-.", G: "--.", H: "....", I: "..", J: ".---",
+    K: "-.-", L: ".-..", M: "--", N: "-.", O: "---",
+    P: ".--.", Q: "--.-", R: ".-.", S: "...", T: "-",
+    U: "..-", V: "...-", W: ".--", X: "-..-", Y: "-.--",
+    Z: "--..",
+    "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-",
+    "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
+    ".": ".-.-.-", ",": "--..--", "?": "..--..", "!": "-.-.--",
+    ":": "---...", ";": "-.-.-.", "'": ".----.", "-": "-....-",
+    "/": "-..-.", "(": "-.--.", ")": "-.--.-", "@": ".--.-.", "&": ".-...",
+};
+
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
+function normalizeText(s) {
+    return String(s || "")
+        .toUpperCase()
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+// Build a timeline of { on: boolean, ms: number }
+function morseTimeline(text, unitMs) {
+    const t = normalizeText(text);
+    const steps = [];
+
+    const pushOff = (ms) => { if (ms > 0) steps.push({ on: false, ms }); };
+    const pushOn = (ms) => { if (ms > 0) steps.push({ on: true, ms }); };
+
+    const DOT = 1 * unitMs;
+    const DASH = 3 * unitMs;
+    const INTRA = 1 * unitMs;   // between symbols in same letter
+    const LETTER = 3 * unitMs;  // between letters
+    const WORD = 7 * unitMs;    // between words
+
+    const chars = [...t];
+    for (let i = 0; i < chars.length; i++) {
+        const ch = chars[i];
+
+        if (ch === " ") {
+            // Word gap: but if last step already off, extend it
+            pushOff(WORD);
+            continue;
+        }
+
+        const code = MORSE[ch];
+        if (!code) continue; // ignore unknown characters
+
+        for (let j = 0; j < code.length; j++) {
+            const sym = code[j];
+            pushOn(sym === "." ? DOT : DASH);
+
+            // intra-symbol gap (only if not last symbol)
+            if (j !== code.length - 1) pushOff(INTRA);
+        }
+
+        // letter gap (only if next char is not space/end)
+        const next = chars[i + 1];
+        if (next && next !== " ") pushOff(LETTER);
+    }
+
+    return steps;
+}
+
+// Single running Morse job (so clicks don't overlap)
+let morseJob = {
+    running: false,
+    cancel: false,
+    text: "",
+    unitMs: 120,
+};
+
+async function setChamberLight(mode) {
+    const payload = {
+        system: {
+            sequence_id: String(seq++),
+            command: "ledctrl",
+            led_node: "chamber_light",
+            led_mode: mode,          // "on" | "off"
+            led_on_time: 0,
+            led_off_time: 0,
+            loop_times: 0,
+            interval_time: 0,
+        },
+    };
+    await publishJson(payload, { qos: 1 });
+}
+
+async function runMorse(text, unitMs) {
+    if (!latest.mqttConnected) throw new Error("MQTT not connected");
+    if (morseJob.running) throw new Error("Morse already running");
+
+    morseJob.running = true;
+    morseJob.cancel = false;
+    morseJob.text = text;
+    morseJob.unitMs = unitMs;
+
+    broadcast({ type: "morse", data: { running: true, text, unitMs } });
+
+    try {
+        const steps = morseTimeline(text, unitMs);
+
+        // Start from OFF
+        await setChamberLight("off");
+
+        for (const step of steps) {
+            if (morseJob.cancel) break;
+            await setChamberLight(step.on ? "on" : "off");
+            await sleep(step.ms);
+        }
+    } finally {
+        // Always end off
+        try { await setChamberLight("off"); } catch { }
+        morseJob.running = false;
+        morseJob.cancel = false;
+        broadcast({ type: "morse", data: { running: false } });
+    }
+}
+
+function stopMorse() {
+    if (!morseJob.running) return;
+    morseJob.cancel = true;
 }
 
 // --------------------
@@ -383,6 +511,32 @@ app.post("/api/light/:node/:mode", async (req, res) => {
 });
 
 // --------------------
+// Morse Code App Post
+// --------------------
+
+app.post("/api/morse/start", async (req, res) => {
+    try {
+        const text = String(req.body?.text || "");
+        const unitMs = Number(req.body?.unitMs || 120);
+
+        if (!text.trim()) return res.status(400).json({ ok: false, error: "text required" });
+        if (!Number.isFinite(unitMs) || unitMs < 40 || unitMs > 1000) {
+            return res.status(400).json({ ok: false, error: "unitMs must be between 40 and 1000" });
+        }
+
+        runMorse(text, unitMs); // don't await; let it run
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+});
+
+app.post("/api/morse/stop", (_req, res) => {
+    stopMorse();
+    res.json({ ok: true });
+});
+
+// --------------------
 // WebSocket: send current state on connect
 // --------------------
 wss.on("connection", (ws) => {
@@ -398,3 +552,4 @@ server.listen(PORT, () => {
     console.log(`Target printer: ${PRINTER_IP} / ${PRINTER_SN}`);
     console.log(`MQTTS: ${mqttUrl}`);
 });
+
