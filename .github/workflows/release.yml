@@ -9,41 +9,37 @@ on:
 permissions:
   contents: write
 
+env:
+  GO2RTC_REPO: AlexxIT/go2rtc
+  # Use "latest" or pin a specific tag like "v1.9.8" (recommended once stable)
+  GO2RTC_TAG: latest
+
 jobs:
-  build-release:
+  create-release-and-sources:
+    name: Create Release + source bundles
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node (optional, safe to keep)
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      # Optional: install deps only when lockfile exists
-      - name: Install dependencies
-        if: ${{ hashFiles('package-lock.json') != '' || hashFiles('npm-shrinkwrap.json') != '' }}
-        run: npm ci
-
-      # Don't fail the build if you have the default "no test specified" script.
-      # If you later add real tests, this will run them normally.
-      - name: Run tests (non-blocking until real tests exist)
+      - name: Run tests (non-blocking)
         if: ${{ hashFiles('package.json') != '' }}
         run: |
           set +e
           npm test --if-present
           status=$?
           set -e
-
           if [ $status -ne 0 ]; then
             echo "Tests failed or not configured (exit $status). Continuing anyway."
-            echo "Tip: update package.json scripts.test when you add real tests."
           fi
 
-      # Create clean archives of the repo (excluding .git)
-      - name: Create tar.gz
+      - name: Create source tar.gz
         run: |
           VERSION="${GITHUB_REF_NAME}"
           mkdir -p dist
@@ -52,48 +48,153 @@ jobs:
               --exclude=".DS_Store" \
               --exclude="dist" \
               --exclude="pkgroot" \
-              -czf "dist/bambu-panels-${VERSION}.tar.gz" .
+              --exclude="bundle" \
+              -czf "dist/bambu-panels-${VERSION}-source.tar.gz" .
 
-      - name: Create zip
+      - name: Create source zip
         run: |
           VERSION="${GITHUB_REF_NAME}"
           mkdir -p dist
-          zip -r "dist/bambu-panels-${VERSION}.zip" . \
-            -x ".git/*" "node_modules/*" ".DS_Store" "dist/*" "pkgroot/*"
+          zip -r "dist/bambu-panels-${VERSION}-source.zip" . \
+            -x ".git/*" "node_modules/*" ".DS_Store" "dist/*" "pkgroot/*" "bundle/*"
 
-      - name: Create GitHub Release + upload assets
+      - name: Create GitHub Release + upload source bundles (auto notes)
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
-            dist/bambu-panels-*.tar.gz
-            dist/bambu-panels-*.zip
+            dist/bambu-panels-*-source.tar.gz
+            dist/bambu-panels-*-source.zip
 
-  build-pkg-macos:
+  macos-pkg:
+    name: macOS .pkg (arm64 + amd64) with go2rtc
     runs-on: macos-latest
-    needs: build-release
+    needs: create-release-and-sources
+    strategy:
+      matrix:
+        arch: [arm64, amd64]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fetch go2rtc for macOS ${{ matrix.arch }}
+        run: |
+          mkdir -p bin
+          # Regex may need a one-time tweak depending on go2rtc asset naming.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            RX="go2rtc.*(mac|darwin).*arm64|go2rtc.*arm64.*(mac|darwin)"
+          else
+            RX="go2rtc.*(mac|darwin).*(amd64|x86_64)|go2rtc.*(amd64|x86_64).*(mac|darwin)"
+          fi
+
+          python3 scripts/fetch_go2rtc.py "${GO2RTC_REPO}" "${GO2RTC_TAG}" "${RX}" "bin/go2rtc"
+
       - name: Build .pkg
         run: |
           VERSION="${GITHUB_REF_NAME}"
+
+          rm -rf pkgroot
           mkdir -p pkgroot/Applications/Bambu-Panels
+
           rsync -a . pkgroot/Applications/Bambu-Panels/ \
             --exclude ".git" \
             --exclude "node_modules" \
             --exclude ".DS_Store" \
             --exclude "pkgroot" \
-            --exclude "dist"
+            --exclude "dist" \
+            --exclude "bundle"
+
+          mkdir -p pkgroot/Applications/Bambu-Panels/bin
+          cp bin/go2rtc pkgroot/Applications/Bambu-Panels/bin/go2rtc
+          chmod +x pkgroot/Applications/Bambu-Panels/bin/go2rtc
 
           pkgbuild \
             --root pkgroot \
             --identifier com.yourname.bambu-panels \
             --version "${VERSION#v}" \
-            "bambu-panels-${VERSION}.pkg"
+            "bambu-panels-${VERSION}-macos-${{ matrix.arch }}.pkg"
 
       - name: Upload .pkg to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: bambu-panels-*.pkg
+          files: bambu-panels-*-macos-*.pkg
+
+  linux-bundle:
+    name: Linux tar.gz (amd64) with go2rtc
+    runs-on: ubuntu-latest
+    needs: create-release-and-sources
+    strategy:
+      matrix:
+        arch: [amd64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch go2rtc for Linux ${{ matrix.arch }}
+        run: |
+          mkdir -p bin
+          RX="go2rtc.*linux.*(amd64|x86_64)|go2rtc.*(amd64|x86_64).*linux"
+          python3 scripts/fetch_go2rtc.py "${GO2RTC_REPO}" "${GO2RTC_TAG}" "${RX}" "bin/go2rtc"
+
+      - name: Package Linux bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          rm -rf bundle dist
+          mkdir -p bundle/bin dist
+
+          rsync -a . bundle/ \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude ".DS_Store" \
+            --exclude "dist" \
+            --exclude "pkgroot" \
+            --exclude "bundle"
+
+          cp bin/go2rtc bundle/bin/go2rtc
+          chmod +x bundle/bin/go2rtc
+
+          tar -czf "dist/bambu-panels-${VERSION}-linux-${{ matrix.arch }}.tar.gz" -C bundle .
+
+      - name: Upload Linux bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/bambu-panels-*-linux-*.tar.gz
+
+  windows-bundle:
+    name: Windows zip (amd64) with go2rtc
+    runs-on: windows-latest
+    needs: create-release-and-sources
+    strategy:
+      matrix:
+        arch: [amd64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch go2rtc for Windows ${{ matrix.arch }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          $rx = "go2rtc.*windows.*(amd64|x86_64)|go2rtc.*(amd64|x86_64).*windows"
+          python scripts/fetch_go2rtc.py $env:GO2RTC_REPO $env:GO2RTC_TAG $rx "bin/go2rtc.exe"
+
+      - name: Package Windows bundle
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}"
+          Remove-Item -Recurse -Force bundle, dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path bundle\bin, dist | Out-Null
+
+          # Copy repo into bundle, excluding junk
+          robocopy . bundle /E /XD .git node_modules dist pkgroot bundle /XF .DS_Store | Out-Null
+          Copy-Item bin\go2rtc.exe bundle\bin\go2rtc.exe -Force
+
+          Compress-Archive -Path bundle\* -DestinationPath "dist\bambu-panels-$version-windows-${{ matrix.arch }}.zip" -Force
+
+      - name: Upload Windows bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/bambu-panels-*-windows-*.zip
