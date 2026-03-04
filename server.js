@@ -1,9 +1,9 @@
 // server.js
 // Panel A backend: Express + WebSocket + direct MQTT (Bambu LAN mode)
 // .env needed:
-//   PRINTER_IP=192.168.220.195
-//   PRINTER_SN=00M00A340400021
-//   LAN_ACCESS_CODE=xxxxxxxx
+//   PRINTER_IP=
+//   PRINTER_SN=
+//   LAN_ACCESS_CODE=
 //   PORT=8787 (optional)
 
 import express from "express";
@@ -182,8 +182,16 @@ mqttClient.on("message", (topic, payload) => {
         return; // ignore non-JSON
     }
 
+    // --- System responses (ACK/NAK for commands like ledctrl) ---
+    const sys = msg?.system;
+    if (sys) {
+        console.log("🧠 SYSTEM REPORT:", JSON.stringify(sys, null, 2));
+        broadcast({ type: "system", data: sys });
+    }
+
     // Most Bambu telemetry looks like: { "print": {...} }
     const print = msg?.print;
+
     if (!print) return;
 
     latest.print = print;
@@ -206,6 +214,9 @@ mqttClient.on("message", (topic, payload) => {
     latest.layer = print.layer_num ?? latest.layer;
     latest.totalLayers = print.total_layer_num ?? latest.totalLayers;
     latest.file = print.subtask_name ?? latest.file;
+
+    // Lights
+    latest.lights = print.lights_report ?? latest.lights;
 
 
     // If printer rejects a command it may report an error code.
@@ -277,54 +288,98 @@ app.post("/api/state/:state", async (req, res) => {
 // Camera proxy
 // --------------------
 app.get("/camera", async (req, res) => {
-  if (!CAMERA_URL) {
-    return res.status(400).send("CAMERA_URL not set in .env");
-  }
-
-  // MJPEG streams are long-lived; don’t let proxies buffer them.
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-
-  const controller = new AbortController();
-  req.on("close", () => controller.abort());
-
-  try {
-    const upstream = await fetch(CAMERA_URL, { signal: controller.signal });
-
-    if (!upstream.ok || !upstream.body) {
-      res.status(upstream.status).send(`Camera upstream error: ${upstream.status}`);
-      return;
+    if (!CAMERA_URL) {
+        return res.status(400).send("CAMERA_URL not set in .env");
     }
 
-    // Pass through content-type (important for MJPEG)
-    const ct = upstream.headers.get("content-type");
-    if (ct) res.setHeader("Content-Type", ct);
+    // MJPEG streams are long-lived; don’t let proxies buffer them.
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
 
-    // Pipe the stream to the browser
-    upstream.body.pipeTo(
-      new WritableStream({
-        write(chunk) {
-          return new Promise((resolve, reject) => {
-            res.write(Buffer.from(chunk), (err) => (err ? reject(err) : resolve()));
-          });
-        },
-        close() {
-          res.end();
-        },
-        abort() {
-          try { res.end(); } catch {}
-        },
-      })
-    ).catch(() => {
-      try { res.end(); } catch {}
-    });
-  } catch (e) {
-    const msg = String(e?.message || e);
-    res.status(500).send(`Camera proxy failed: ${msg}`);
-  }
+    const controller = new AbortController();
+    req.on("close", () => controller.abort());
+
+    try {
+        const upstream = await fetch(CAMERA_URL, { signal: controller.signal });
+
+        if (!upstream.ok || !upstream.body) {
+            res.status(upstream.status).send(`Camera upstream error: ${upstream.status}`);
+            return;
+        }
+
+        // Pass through content-type (important for MJPEG)
+        const ct = upstream.headers.get("content-type");
+        if (ct) res.setHeader("Content-Type", ct);
+
+        // Pipe the stream to the browser
+        upstream.body.pipeTo(
+            new WritableStream({
+                write(chunk) {
+                    return new Promise((resolve, reject) => {
+                        res.write(Buffer.from(chunk), (err) => (err ? reject(err) : resolve()));
+                    });
+                },
+                close() {
+                    res.end();
+                },
+                abort() {
+                    try { res.end(); } catch { }
+                },
+            })
+        ).catch(() => {
+            try { res.end(); } catch { }
+        });
+    } catch (e) {
+        const msg = String(e?.message || e);
+        res.status(500).send(`Camera proxy failed: ${msg}`);
+    }
+});
+
+// --------------------
+// Lights
+// --------------------
+
+app.post("/api/light/:node/:mode", async (req, res) => {
+    try {
+        const node = String(req.params.node || "");
+        const mode = String(req.params.mode || "").toLowerCase();
+
+        if (node !== "chamber_light") {
+            return res.status(400).json({
+                ok: false,
+                error: `Node "${node}" is not user-controllable on this printer (try chamber_light).`,
+            });
+        }
+        if (!["on", "off"].includes(mode)) {
+            return res.status(400).json({ ok: false, error: "Mode must be on|off" });
+        }
+        if (!latest.mqttConnected) {
+            return res.status(503).json({ ok: false, error: "MQTT not connected" });
+        }
+
+        const payload = {
+            system: {
+                sequence_id: String(seq++),
+                command: "ledctrl",
+                led_node: node,
+                led_mode: mode,
+                led_on_time: 0,
+                led_off_time: 0,
+                loop_times: 0,
+                interval_time: 0,
+            },
+        };
+
+        await publishJson(payload, { qos: 1 });
+
+        res.json({ ok: true, node, mode });
+    } catch (e) {
+        const msg = String(e?.message || e);
+        res.status(500).json({ ok: false, error: msg });
+    }
 });
 
 // --------------------
