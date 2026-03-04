@@ -146,21 +146,33 @@ jobs:
           compare_link = f"https://github.com/{owner}/{repo}/compare/{prev}...{tag}"
 
           # 4) Create a nice header + summary + changes
-          header = f"""# Bambu-Panels {tag}
-
+          header = f"""
+          # Bambu-Panels {tag}
+          
           ## Downloads
-          - macOS Apple Silicon: `bambu-panels-{tag}-macos-arm64.pkg`
-          - macOS Intel: `bambu-panels-{tag}-macos-amd64.pkg`
-          - Linux: `bambu-panels-{tag}-linux-amd64.tar.gz`
+          - macOS Apple Silicon: bambu-panels-{tag}-macos-arm64.pkg
+          - macOS Intel: bambu-panels-{tag}-macos-amd64.pkg
+          - Linux: bambu-panels-{tag}-linux-amd64.tar.gz
           
           ## Quick Start
-          ### macOS
-          1. Install the `.pkg`
-          2. Files install to `/Applications/Bambu-Panels`
-          3. Run `start.sh`
           
-          ### Linux
-          ```bash
+          macOS
+          1. Install the .pkg
+          2. Files install to /Applications/Bambu-Panels
+          3. Run start.sh
+          
+          Linux
+          
           tar -xzf bambu-panels-{tag}-linux-amd64.tar.gz
           cd bambu-panels
           ./start.sh
+          
+          ## Summary
+          {summarize(subjects)}
+          
+          ## Changes
+          {changes_block}
+          
+          ## Full Changelog
+          {compare_link}
+          """
