@@ -7,7 +7,7 @@ EXCLUDE = {
 }
 
 ROOT = Path(".").resolve()
-OUT = Path("docs/repo-diagram.mmd")
+OUT = Path("docs/repo-diagram.md")
 
 def should_skip(path: Path) -> bool:
     parts = set(path.parts)
