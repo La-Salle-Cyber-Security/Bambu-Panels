@@ -1,6 +1,6 @@
 # Repository Tree
 
-Generated: 2026-03-05 03:09 UTC
+Generated: 2026-03-05 03:14 UTC
 
 ```
 .
@@ -16,7 +16,8 @@ Generated: 2026-03-05 03:09 UTC
 ├── LICENSE
 ├── README.md
 ├── docs
-│   └── REPO_TREE.md
+│   ├── REPO_TREE.md
+│   └── repo-diagram.mmd
 ├── go2rtc.yaml
 ├── package-lock.json
 ├── package.json
@@ -31,5 +32,5 @@ Generated: 2026-03-05 03:09 UTC
 ├── start.sh
 └── test.js
 
-7 directories, 20 files
+7 directories, 21 files
 ```
