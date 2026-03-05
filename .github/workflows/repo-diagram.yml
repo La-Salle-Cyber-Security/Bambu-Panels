@@ -1,0 +1,68 @@
+name: Generate Repo Diagram
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagram:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: DEBUG PROOF OF LIFE
+        run: |
+          echo "I am running steps after checkout."
+          pwd
+          ls -la
+
+      - name: Debug - show repo root
+        run: |
+          pwd
+          ls -la
+          ls -la .github || true
+          ls -la .github/scripts || true
+
+      - name: Generate tree + mermaid
+        run: |
+          mkdir -p docs
+
+          sudo apt-get update -y
+          sudo apt-get install -y tree
+
+          echo "# Repository Tree" > docs/REPO_TREE.md
+          echo "" >> docs/REPO_TREE.md
+          echo "Generated: $(date -u +"%Y-%m-%d %H:%M UTC")" >> docs/REPO_TREE.md
+          echo "" >> docs/REPO_TREE.md
+          echo "\`\`\`" >> docs/REPO_TREE.md
+          tree -a -I ".git|node_modules|dist|build|out|.next|.cache|.venv|venv|__pycache__|.DS_Store" >> docs/REPO_TREE.md
+          echo "\`\`\`" >> docs/REPO_TREE.md
+
+          python3 .github/scripts/make_repo_mermaid.py
+
+          echo "---- Generated files ----"
+          ls -la docs
+          echo "---- Preview ----"
+          head -n 20 docs/REPO_TREE.md || true
+          head -n 20 docs/repo-diagram.md || true
+
+      - name: Commit changes (if any)
+        run: |
+          # Stage generated files (adds new files too)
+          git add docs/REPO_TREE.md docs/repo-diagram.md
+
+          # If nothing is staged, stop
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: auto-update repo diagram"
+          git push

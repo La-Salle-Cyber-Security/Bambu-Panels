@@ -36,6 +36,13 @@ Recommended knowledge:
 
 ---
 
+## Repo map
+
+- docs/REPO_TREE.md
+- docs/repo-diagram.mmd
+
+---
+
 # What This Project Provides
 
 Each release automatically builds several downloadable assets.
