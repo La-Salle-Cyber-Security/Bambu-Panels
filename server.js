@@ -382,7 +382,9 @@ async function runMorse(text, unitMs) {
     } finally {
         // Always end off
         try { await setChamberLight("off"); } catch { /* best-effort cleanup */ }
+        // eslint-disable-next-line require-atomic-updates
         morseJob.running = false;
+        // eslint-disable-next-line require-atomic-updates
         morseJob.cancel = false;
         broadcast({ type: "morse", data: { running: false } });
     }

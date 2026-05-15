@@ -31,7 +31,7 @@ export default [
 
       // Catch real bugs
       "no-undef": "error",
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^(setLight|morseStart|morseStop)$" }],
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "no-unreachable": "error",
 
       // Async safety
@@ -58,7 +58,7 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       "no-undef": "error",
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^(setLight|morseStart|morseStop)$" }],
     },
   },
 ];
