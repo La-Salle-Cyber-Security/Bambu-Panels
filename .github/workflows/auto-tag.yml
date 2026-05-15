@@ -1,25 +1,26 @@
 name: Auto Tag
-
+ 
 on:
   push:
     branches: ["main"]
-
+  workflow_dispatch:
+ 
 permissions:
   contents: write
-
+ 
 jobs:
   auto-tag:
     name: Bump & Tag
     runs-on: ubuntu-latest
     # Only run when commit message contains [release]
-    if: contains(github.event.head_commit.message, '[release]')
-
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+ 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0   # need full history to read existing tags
-
+ 
       - name: Compute next patch version
         id: version
         run: |
@@ -27,7 +28,7 @@ jobs:
           LATEST=$(git tag --list '[vV][0-9]*' \
             | sort -V \
             | tail -n 1)
-
+ 
           if [ -z "$LATEST" ]; then
             # No tags yet — start at v1.0.0
             NEXT="v1.0.0"
@@ -39,11 +40,11 @@ jobs:
             PATCH=$(echo "$STRIPPED" | cut -d. -f3)
             NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           fi
-
+ 
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
           echo "Bumping: $LATEST → $NEXT"
-
+ 
       - name: Create and push tag
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,7 +55,7 @@ jobs:
           git tag "$NEXT" -m "Auto-tagged by CI: $NEXT"
           git push origin "$NEXT"
           echo "✅ Tagged $NEXT"
-
+ 
       - name: Summary
         run: |
           echo "### 🏷️ Auto-tagged!" >> "$GITHUB_STEP_SUMMARY"
@@ -65,3 +66,4 @@ jobs:
           echo "| New tag  | \`${{ steps.version.outputs.next }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "The **Build & Release** workflow will now trigger automatically." >> "$GITHUB_STEP_SUMMARY"
+ 
