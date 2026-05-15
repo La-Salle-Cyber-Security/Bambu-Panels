@@ -1,0 +1,3 @@
+streams:
+  bambu:
+    - rtsps://bblp:f0ae0d78@192.168.220.195:322/streaming/live/1

@@ -1,0 +1,174 @@
+:root {
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
+
+body {
+    margin: 0;
+    background: #0b0f17;
+    color: #e8eefc;
+}
+
+.wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: 0.2px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.card {
+    background: #121a2a;
+    border: 1px solid #1d2a44;
+    border-radius: 14px;
+    padding: 14px;
+}
+
+.card.wide {
+    grid-column: 1 / -1;
+}
+
+.big {
+    font-size: 28px;
+    font-weight: 700;
+    margin-top: 6px;
+}
+
+.muted {
+    opacity: 0.7;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+button {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid #2a3a5f;
+    background: #16213a;
+    color: #e8eefc;
+    cursor: pointer;
+}
+
+button:hover {
+    filter: brightness(1.1);
+}
+
+button.danger {
+    border-color: #7a2a2a;
+    background: #2a1111;
+}
+
+.pill {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #2a3a5f;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.pill.ok {
+    border-color: #1f6b3b;
+    background: #0f2b1a;
+}
+
+.pill.bad {
+    border-color: #7a2a2a;
+    background: #2a1111;
+}
+
+.pre {
+    background: #0b0f17;
+    border: 1px solid #1d2a44;
+    padding: 12px;
+    border-radius: 12px;
+    overflow: auto;
+    max-height: 420px;
+}
+
+
+.bar {
+    margin-top: 12px;
+    height: 10px;
+    background: #0b0f17;
+    border: 1px solid #1d2a44;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.barFill {
+    height: 100%;
+    background: #2a6bff;
+}
+
+/* you can change later */
+
+.row.spread {
+    justify-content: space-between;
+}
+
+.temps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.tempCard {
+    background: #0b0f17;
+    border: 1px solid #1d2a44;
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.tempVal {
+    font-size: 18px;
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+#cam {
+    width: 100%;
+    display: block;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}
+
+.camWrap {
+    margin-top: 10px;
+    border: 1px solid #1d2a44;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #0b0f17;
+}
+
+.camFrame {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    display: block;
+}
