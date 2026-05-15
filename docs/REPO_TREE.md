@@ -1,6 +1,6 @@
 # Repository Tree
 
-Generated: 2026-05-15 16:00 UTC
+Generated: 2026-05-15 16:12 UTC
 
 ```
 .
@@ -23,6 +23,7 @@ Generated: 2026-05-15 16:00 UTC
 │   ├── function-diagram.md
 │   └── repo-diagram.md
 ├── eslint.config.js
+├── go2rtc
 ├── go2rtc.yaml
 ├── package-lock.json
 ├── package.json
@@ -37,5 +38,5 @@ Generated: 2026-05-15 16:00 UTC
 ├── start.sh
 └── test.js
 
-7 directories, 26 files
+7 directories, 27 files
 ```
