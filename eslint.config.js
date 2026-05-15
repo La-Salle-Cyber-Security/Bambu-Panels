@@ -31,7 +31,7 @@ export default [
 
       // Catch real bugs
       "no-undef": "error",
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^(setLight|morseStart|morseStop)$" }],
       "no-unreachable": "error",
 
       // Async safety
