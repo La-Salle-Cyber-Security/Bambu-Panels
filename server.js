@@ -184,7 +184,7 @@ mqttClient.on("message", (topic, payload) => {
     }
 
     // --- System responses (ACK/NAK for commands like ledctrl) ---
-    if (DEBUG) console.log("🧠 SYSTEM REPORT:", JSON.stringify(sys, null, 2));
+    if (DEBUG) console.log("🧠 SYSTEM REPORT:", JSON.stringify(msg, null, 2));
 
     // Most Bambu telemetry looks like: { "print": {...} }
     const print = msg?.print;
@@ -334,7 +334,7 @@ function morseTimeline(text, unitMs) {
 }
 
 // Single running Morse job (so clicks don't overlap)
-let morseJob = {
+const morseJob = {
     running: false,
     cancel: false,
     text: "",
@@ -381,8 +381,10 @@ async function runMorse(text, unitMs) {
         }
     } finally {
         // Always end off
-        try { await setChamberLight("off"); } catch { }
+        try { await setChamberLight("off"); } catch { /* best-effort cleanup */ }
+        // eslint-disable-next-line require-atomic-updates
         morseJob.running = false;
+        // eslint-disable-next-line require-atomic-updates
         morseJob.cancel = false;
         broadcast({ type: "morse", data: { running: false } });
     }
@@ -454,11 +456,11 @@ app.get("/camera", async (req, res) => {
                     res.end();
                 },
                 abort() {
-                    try { res.end(); } catch { }
+                    try { res.end(); } catch { /* client already gone */ }
                 },
             })
         ).catch(() => {
-            try { res.end(); } catch { }
+            try { res.end(); } catch { /* client already gone */ }
         });
     } catch (e) {
         const msg = String(e?.message || e);

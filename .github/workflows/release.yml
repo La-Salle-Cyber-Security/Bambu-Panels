@@ -21,12 +21,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node (optional, safe to keep)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Run tests (non-blocking)
         if: ${{ hashFiles('package.json') != '' }}
@@ -76,7 +76,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Fetch go2rtc for macOS ${{ matrix.arch }}
         run: |
@@ -123,7 +123,7 @@ jobs:
             "bambu-panels-${VERSION}-macos-${{ matrix.arch }}.pkg"
 
       - name: Upload .pkg to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: bambu-panels-*-macos-*.pkg
 
@@ -137,7 +137,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Fetch go2rtc for Linux ${{ matrix.arch }}
         run: |

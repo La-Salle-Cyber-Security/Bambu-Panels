@@ -1,0 +1,26 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  pull-requests: write   # allows posting a comment on the PR if vulns are found
+
+jobs:
+  dependency-review:
+    name: Scan for CVEs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v5
+        with:
+          # Fail on moderate or higher CVEs
+          fail-on-severity: moderate
+          # Post a summary comment directly on the PR
+          comment-summary-in-pr: always
