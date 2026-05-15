@@ -1,6 +1,6 @@
 # Repository Tree
 
-Generated: 2026-05-14 18:12 UTC
+Generated: 2026-05-15 15:55 UTC
 
 ```
 .
@@ -9,6 +9,9 @@ Generated: 2026-05-14 18:12 UTC
 │   ├── scripts
 │   │   └── make_repo_mermaid.py
 │   └── workflows
+│       ├── auto-tag.yml
+│       ├── ci.yml
+│       ├── dependency-review.yml
 │       ├── generate-release-notes.yml
 │       ├── release.yml
 │       └── repo-diagram.yml
@@ -19,6 +22,7 @@ Generated: 2026-05-14 18:12 UTC
 │   ├── REPO_TREE.md
 │   ├── function-diagram.md
 │   └── repo-diagram.md
+├── eslint.config.js
 ├── go2rtc.yaml
 ├── package-lock.json
 ├── package.json
@@ -33,5 +37,5 @@ Generated: 2026-05-14 18:12 UTC
 ├── start.sh
 └── test.js
 
-7 directories, 22 files
+7 directories, 26 files
 ```
